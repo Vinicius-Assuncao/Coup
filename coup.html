@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Coup contra Bots</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="icon.png">
+</head>
+<body>
+<header class="title">
+  <h1><img class="title-logo" src="icon.png" alt="COUP"></h1>
+  <p class="sub">Manipulação, blefe e suborno. Apenas uma família sobreviverá.</p>
+  <div class="rule"></div>
+</header>
+
+<div id="setup" class="panel start">
+  <div class="minis" id="minis"></div>
+  <div class="setup-row">
+    <label>Bots
+      <select id="nBots">
+        <option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option>
+      </select>
+    </label>
+    <label>Dificuldade
+      <select id="diff">
+        <option value="facil">Fácil</option>
+        <option value="medio" selected>Médio</option>
+        <option value="dificil">Difícil</option>
+      </select>
+    </label>
+    <label>Carta extra
+      <select id="variant" onchange="renderMinis()">
+        <option value="inquisidor" selected>Inquisidor</option>
+        <option value="embaixador">Embaixador</option>
+      </select>
+    </label>
+  </div>
+  <p class="hint">Todos começam com 0 moedas e 2 cartas viradas para baixo. Com 10 ou mais moedas, o Golpe é obrigatório.</p>
+  <div class="start"><button class="primary" onclick="startGame()">Começar jogo</button></div>
+</div>
+
+<div id="game" hidden>
+  <div id="stage">
+    <div id="table">
+      <div id="center">
+        <div class="coin-stack" role="img" aria-label="Pilha de moedas do tesouro">
+          <span class="gold big"></span><span class="gold big"></span><span class="gold big"></span>
+        </div>
+        <div id="deck" class="deck-stack" role="img" aria-label="Baralho de cartas viradas para baixo">
+          <span class="deck-card"></span><span class="deck-card"></span><span class="deck-card"></span>
+        </div>
+      </div>
+      <div id="seats"></div>
+      <div id="fly"></div>
+    </div>
+    <aside class="side">
+      <div id="now">Aguardando...</div>
+      <div id="controls"></div>
+      <div id="log"></div>
+    </aside>
+  </div>
+</div>
+<div id="fx"></div>
+<div id="events" aria-live="polite"></div>
+
+<script src="game.js"></script>
+</body>
+</html>
