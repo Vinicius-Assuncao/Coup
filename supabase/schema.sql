@@ -28,13 +28,30 @@ alter table public.rooms enable row level security;
 alter table public.room_players enable row level security;
 alter table public.room_secrets enable row level security;
 
+drop policy if exists "rooms_select" on public.rooms;
 create policy "rooms_select" on public.rooms for select to anon, authenticated using (true);
+drop policy if exists "room_players_select" on public.room_players;
 create policy "room_players_select" on public.room_players for select to anon, authenticated using (true);
 
-do $$ begin
-  alter publication supabase_realtime add table public.rooms;
-exception when duplicate_object then null; end $$;
+-- Garante que as duas tabelas publiquem eventos para o Supabase Realtime.
+-- Pode ser executado novamente sem erro.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'rooms'
+  ) then
+    execute 'alter publication supabase_realtime add table public.rooms';
+  end if;
 
-do $$ begin
-  alter publication supabase_realtime add table public.room_players;
-exception when duplicate_object then null; end $$;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'room_players'
+  ) then
+    execute 'alter publication supabase_realtime add table public.room_players';
+  end if;
+end $$;

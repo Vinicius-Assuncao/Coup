@@ -72,11 +72,13 @@ async function join(uid: string, body: any) {
   const code = String(body.code ?? '').toUpperCase().trim();
   const name = clean(body.name);
   const { room, players } = await loadAll(code);
-  if (room.status !== 'lobby') throw new Error('A partida já começou');
+  // Um participante existente pode reconectar a uma partida em andamento ou
+  // encerrada. Novos participantes só podem entrar enquanto a sala está no lobby.
   if (players.some((p: any) => p.user_id === uid)) {
     await admin.from('room_players').update({ name }).eq('room_code', code).eq('user_id', uid);
     return { code };
   }
+  if (room.status !== 'lobby') throw new Error('A partida já começou');
   if (players.length >= MAX_PLAYERS) throw new Error('Sala cheia (máximo 8)');
   const { error } = await admin.from('room_players').insert({ room_code: code, user_id: uid, name, seat: players.length });
   if (error) throw error;

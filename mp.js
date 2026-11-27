@@ -51,100 +51,223 @@ function showErr(e) {
 }
 
 async function init() {
-  if (!cfg.url || cfg.url.includes('SEU-PROJETO')) {
+  if (!cfg?.url || !cfg?.anonKey || cfg.url.includes('SEU-PROJETO')) {
     $('err').textContent = 'Configure o mp-config.js com a URL e a chave do seu projeto Supabase.';
+    $('entry').hidden = false;
     return;
   }
-  const { data: s } = await sb.auth.getSession();
-  if (!s.session) {
-    const r = await sb.auth.signInAnonymously();
-    if (r.error) { showErr(new Error('Ative "Anonymous sign-ins" no Supabase: ' + r.error.message)); return; }
+
+  try {
+    const { data: sessionData, error: sessionError } = await sb.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!sessionData.session) {
+      const { error } = await sb.auth.signInAnonymously();
+      if (error) throw new Error('Ative "Anonymous sign-ins" no Supabase: ' + error.message);
+    }
+
+    const { data: userData, error: userError } = await sb.auth.getUser();
+    if (userError || !userData.user) throw userError || new Error('Não foi possível autenticar.');
+    uid = userData.user.id;
+
+    if (code) {
+      try {
+        await enter(code);
+        // Se a última sessão salva já terminou (por exemplo, a aba foi fechada
+        // antes do aviso de fim), abre o menu em vez de prender o usuário nela.
+        if (data?.room?.status === 'finished') await leaveRoom();
+        return;
+      } catch (e) {
+        console.warn('[coup] Não foi possível retomar a sala salva:', e);
+        localStorage.removeItem('coup-room');
+        code = null;
+      }
+    }
+    $('entry').hidden = false;
+  } catch (e) {
+    showErr(e);
+    $('entry').hidden = false;
   }
-  uid = (await sb.auth.getUser()).data.user.id;
-  if (code) {
-    try { await enter(code); return; } catch (_) { code = null; localStorage.removeItem('coup-room'); }
-  }
-  $('entry').hidden = false;
 }
 
 async function enter(c) {
-  code = c;
-  localStorage.setItem('coup-room', c);
+  const roomCode = String(c || '').trim().toUpperCase();
+  if (!roomCode) throw new Error('Informe o código da sala.');
+
+  code = roomCode;
   await refresh();
+  if (!data?.room) throw new Error('Não foi possível carregar a sala.');
+
   $('entry').hidden = true;
   $('room').hidden = false;
   subscribe();
 }
 
-let seq = 0, applied = 0, lastSig = '', refreshing = null, again = false;
+let refreshTask = null;
+let refreshQueued = false;
+let lastSig = '';
 
 async function refresh() {
-  // Junta várias chamadas simultâneas (evento de rooms + room_players) em uma só
-  if (refreshing) { again = true; return refreshing; }
-  refreshing = (async () => {
-    try {
-      do {
-        again = false;
-        const my = ++seq;
-        const res = await callRetry('get');
-        if (my < applied) continue; // resposta velha, descarta
-        applied = my;
-        data = res;
-        lastSig = sigOf(res.room.version, res.room.status, res.lobby.map(p => p.user_id));
-        render();
-      } while (again);
-    } finally { refreshing = null; }
+  if (!code) return;
+  // Coalesce eventos simultâneos, mas faz uma nova leitura ao terminar para não
+  // perder atualizações que cheguem enquanto a Edge Function está respondendo.
+  if (refreshTask) {
+    refreshQueued = true;
+    return refreshTask;
+  }
+
+  refreshTask = (async () => {
+    do {
+      refreshQueued = false;
+      const requestedCode = code;
+      const res = await callRetry('get');
+      if (requestedCode !== code) return;
+      if (!res?.room || !res?.state) throw new Error('Resposta inválida do servidor.');
+
+      data = res;
+      lastSig = sigOf(res.room.version, res.room.status, res.lobby || []);
+
+      // A sala continua visível nesta aba para mostrar o vencedor, mas não deve
+      // ser reaberta automaticamente quando o usuário voltar ao multiplayer.
+      if (res.room.status === 'finished') {
+        localStorage.removeItem('coup-room');
+      } else {
+        localStorage.setItem('coup-room', requestedCode);
+      }
+      render();
+    } while (refreshQueued && code);
   })();
-  return refreshing;
+
+  try {
+    await refreshTask;
+  } finally {
+    refreshTask = null;
+    if (refreshQueued && code) refresh().catch(showErr);
+  }
 }
 
 async function callRetry(action, extra) {
   let last;
   for (let i = 0; i < 3; i++) {
     try { return await call(action, extra); }
-    catch (e) { last = e; await new Promise(r => setTimeout(r, 400 * (i + 1))); }
+    catch (e) {
+      last = e;
+      if (i < 2) await new Promise(r => setTimeout(r, 350 * (i + 1)));
+    }
   }
   throw last;
 }
 
-const sigOf = (v, st, ids) => `${v}|${st}|${[...ids].sort().join(',')}`;
+const sigOf = (version, status, players) => JSON.stringify([
+  version,
+  status,
+  (players || []).map(p => [p.user_id, p.name || '']).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+]);
 
 function subscribe() {
-  if (chan) sb.removeChannel(chan);
-  const r = () => refresh().catch(showErr);
-  chan = sb.channel('room-' + code)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `code=eq.${code}` }, r)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'room_players', filter: `room_code=eq.${code}` }, r)
+  if (!code) return;
+  if (chan) {
+    sb.removeChannel(chan).catch(e => console.warn('[coup] remove channel:', e));
+    chan = null;
+  }
+
+  const subscribedCode = code;
+  chan = sb.channel('coup-room-' + subscribedCode)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'rooms', filter: `code=eq.${subscribedCode}`,
+    }, () => {
+      if (code === subscribedCode) refresh().catch(showErr);
+    })
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'room_players', filter: `room_code=eq.${subscribedCode}`,
+    }, () => {
+      if (code === subscribedCode) refresh().catch(showErr);
+    })
     .subscribe((status, err) => {
-      console.log('[coup] realtime:', status, err || '');
-      if (status === 'SUBSCRIBED') r(); // pega qualquer mudança ocorrida antes de conectar
+      console.log('[coup] Realtime:', status, err || '');
+      if (status === 'SUBSCRIBED' && code === subscribedCode) {
+        // Recupera alterações que ocorreram antes da inscrição ser confirmada.
+        refresh().catch(showErr);
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn('[coup] Realtime indisponível; a consulta periódica continuará ativa.', err || status);
+      }
     });
 }
 
-// Rede de segurança: consulta barata (só versão/status/jogadores) a cada 2s.
-// Só chama a Edge Function quando algo mudou. Cobre falha do realtime e abas em segundo plano.
+// Contingência para quando o Realtime não estiver habilitado/configurado no projeto.
+// Consulta só os metadados públicos; a Edge Function é chamada apenas se houver mudança.
 async function poll() {
-  if (!code || !data || refreshing) return;
-  try {
-    const { data: row, error } = await sb.from('rooms')
-      .select('version,status,room_players(user_id)').eq('code', code).maybeSingle();
-    if (error || !row) return;
-    const sig = sigOf(row.version, row.status, row.room_players.map(p => p.user_id));
-    if (sig !== lastSig) await refresh();
-  } catch (e) { console.warn('[coup] poll', e); }
-}
-setInterval(poll, 2000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden && code && data) refresh().catch(showErr); });
-window.addEventListener('focus', () => { if (code && data) refresh().catch(() => {}); });
+  if (!code || !data || document.hidden) return;
+  const checkedCode = code;
 
-// Prazo: quando estoura, qualquer cliente pede ao servidor para aplicar a ação padrão
+  try {
+    const [roomResult, playersResult] = await Promise.all([
+      sb.from('rooms').select('version,status').eq('code', checkedCode).maybeSingle(),
+      sb.from('room_players').select('user_id,name').eq('room_code', checkedCode),
+    ]);
+
+    if (checkedCode !== code) return;
+    if (roomResult.error) throw roomResult.error;
+    if (playersResult.error) throw playersResult.error;
+    if (!roomResult.data) throw new Error('A sala não existe mais.');
+
+    const sig = sigOf(roomResult.data.version, roomResult.data.status, playersResult.data || []);
+    if (sig !== lastSig) await refresh();
+  } catch (e) {
+    // Não interrompe o jogo por uma falha momentânea de leitura; Realtime e a
+    // próxima consulta tentam novamente.
+    console.warn('[coup] Consulta de sincronização:', e);
+  }
+}
+
+const pollTimer = setInterval(() => poll(), 1500);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && code && data) refresh().catch(showErr);
+});
+window.addEventListener('focus', () => {
+  if (code && data) refresh().catch(() => {});
+});
+window.addEventListener('pageshow', () => {
+  // Recria a inscrição quando o navegador restaura a página pelo botão Voltar.
+  if (code && data) {
+    subscribe();
+    refresh().catch(showErr);
+  }
+});
+
+// Prazo: qualquer cliente pode pedir ao servidor que aplique a ação padrão.
+let ticking = false;
 setInterval(async () => {
   updateTimer();
   const pd = data?.state?.pending;
-  if (data?.room?.status === 'playing' && pd && Date.now() > pd.deadline) {
-    try { await call('tick'); await refresh(); } catch (_) {}
+  if (!ticking && data?.room?.status === 'playing' && pd && Date.now() > pd.deadline) {
+    ticking = true;
+    try { await call('tick'); await refresh(); }
+    catch (e) { console.warn('[coup] tick:', e); }
+    finally { ticking = false; }
   }
 }, 1000);
+
+async function leaveRoom() {
+  localStorage.removeItem('coup-room');
+  code = null;
+  data = null;
+  selecting = null;
+  exKey = null;
+  exPicked = [];
+  lastSig = '';
+
+  if (chan) {
+    const current = chan;
+    chan = null;
+    try { await sb.removeChannel(current); }
+    catch (e) { console.warn('[coup] Não foi possível encerrar o canal:', e); }
+  }
+
+  $('room').hidden = true;
+  $('entry').hidden = false;
+  $('err').textContent = '';
+  $('codeIn').value = '';
+}
 
 function render() {
   if (!data) return;
@@ -208,7 +331,13 @@ function renderControls() {
   const st = data.state, pd = st.pending, c = $('controls');
   c.innerHTML = '';
   const nm = id => st.players.find(p => p.id === id)?.name || '?';
-  if (st.status === 'finished') { $('now').textContent = `🏆 ${nm(st.winner)} venceu a partida!`; return; }
+  const leaveButton = $('btnLeaveGame');
+  leaveButton.hidden = st.status !== 'finished';
+  if (st.status === 'finished') {
+    $('now').textContent = `🏆 ${nm(st.winner)} venceu a partida!`;
+    c.innerHTML = '<p>Partida encerrada.</p>';
+    return;
+  }
   if (!pd) { $('now').textContent = ''; return; }
   const me = st.players.find(p => p.id === uid);
   const myHand = data.me?.hand || [];
@@ -372,6 +501,7 @@ $('btnJoin').onclick = async () => {
 $('btnStart').onclick = async () => {
   try { await call('start'); await refresh(); } catch (e) { showErr(e); }
 };
-$('btnLeave').onclick = () => { localStorage.removeItem('coup-room'); location.href = 'multiplayer.html'; };
+$('btnLeave').onclick = () => leaveRoom().catch(showErr);
+$('btnLeaveGame').onclick = () => leaveRoom().catch(showErr);
 
 init();
