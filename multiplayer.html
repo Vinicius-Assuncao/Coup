@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Coup online</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="mp-style.css">
+</head>
+<body>
+<header class="title">
+  <h1>COUP</h1>
+  <p class="sub">Online · de 2 a 8 jogadores · 2 minutos por jogada</p>
+  <div class="rule"></div>
+</header>
+
+<div id="entry" class="panel start" hidden>
+  <div class="setup-row">
+    <label>Seu nome <input id="name" maxlength="16" placeholder="Seu nome"></label>
+    <label>Carta extra
+      <select id="variant2"><option value="embaixador">Embaixador</option><option value="inquisidor">Inquisidor</option></select>
+    </label>
+  </div>
+  <div class="start"><button id="btnCreate" class="primary">Criar sala</button></div>
+  <hr>
+  <div class="setup-row">
+    <label>Código da sala <input id="codeIn" maxlength="4" placeholder="ABCD" class="code-in"></label>
+  </div>
+  <div class="start"><button id="btnJoin">Entrar na sala</button></div>
+  <p id="err" class="err"></p>
+  <p class="hint"><a href="index.html">← Voltar ao jogo contra bots</a></p>
+</div>
+
+<div id="room" hidden>
+  <section id="lobby" class="panel" hidden>
+    <p class="hint">Código da sala</p>
+    <h2 id="roomCode" class="code"></h2>
+    <ul id="lobbyList" class="lobby-list"></ul>
+    <p id="lobbyMsg" class="hint"></p>
+    <div class="start">
+      <button id="btnStart" class="primary">Iniciar partida</button>
+      <button id="btnLeave">Sair</button>
+    </div>
+  </section>
+
+  <section id="game" hidden>
+    <div id="stage">
+      <div id="table">
+        <div id="center">
+          <div class="pile"><span class="gold big"></span><b id="treasury">0</b></div>
+          <div id="deck"></div>
+        </div>
+        <div id="seats"></div>
+      </div>
+      <aside class="side">
+        <div id="timer"></div>
+        <div id="now">Aguardando...</div>
+        <div id="controls"></div>
+        <div id="mpLog"></div>
+      </aside>
+    </div>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="mp-config.js"></script>
+<script src="cards.js"></script>
+<script src="mp.js"></script>
+</body>
+</html>
