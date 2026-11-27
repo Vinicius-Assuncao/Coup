@@ -17,12 +17,23 @@ const ALPH = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const genCode = () => Array.from({ length: 4 }, () => ALPH[Math.floor(Math.random() * ALPH.length)]).join('');
 const clean = (n: unknown) => String(n ?? '').trim().slice(0, 16) || 'Jogador';
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Lê sala, segredos e jogadores. Durante a partida, só devolve quando os segredos
+// já correspondem à versão pública (save() grava a sala primeiro e os segredos depois).
 async function loadAll(code: string) {
-  const { data: room } = await admin.from('rooms').select('*').eq('code', code).maybeSingle();
-  if (!room) throw new Error('Sala não encontrada');
-  const { data: sec } = await admin.from('room_secrets').select('data').eq('room_code', code).maybeSingle();
-  const { data: players } = await admin.from('room_players').select('*').eq('room_code', code).order('seat');
-  return { room, sec: sec?.data ?? {}, players: players ?? [] };
+  for (let t = 0; t < 10; t++) {
+    const { data: room } = await admin.from('rooms').select('*').eq('code', code).maybeSingle();
+    if (!room) throw new Error('Sala não encontrada');
+    const { data: sec } = await admin.from('room_secrets').select('data').eq('room_code', code).maybeSingle();
+    const { data: players } = await admin.from('room_players').select('*').eq('room_code', code).order('seat');
+    const secData: any = sec?.data ?? {};
+    if (room.status === 'lobby' || secData._v === room.version) {
+      return { room, sec: secData, players: players ?? [] };
+    }
+    await sleep(150);
+  }
+  throw new Error('Sincronizando o estado da sala, tente de novo');
 }
 
 // Gravação com controle de versão (evita dois clientes sobrescreverem o mesmo estado)
@@ -32,7 +43,8 @@ async function save(room: any, pub: any, sec: any) {
     .eq('code', room.code).eq('version', room.version).select('code');
   if (error) throw error;
   if (!data || data.length === 0) throw new Error('Estado mudou ao mesmo tempo. Tente de novo.');
-  const { error: e2 } = await admin.from('room_secrets').update({ data: sec }).eq('room_code', room.code);
+  const { error: e2 } = await admin.from('room_secrets')
+    .update({ data: { ...sec, _v: room.version + 1 } }).eq('room_code', room.code);
   if (e2) throw e2;
 }
 
@@ -42,9 +54,14 @@ async function create(uid: string, body: any) {
   for (let t = 0; t < 10; t++) {
     const code = genCode();
     const { error } = await admin.from('rooms').insert({ code, host_id: uid, status: 'lobby', state: { ex }, version: 0 });
-    if (error) continue;
-    await admin.from('room_secrets').insert({ room_code: code, data: {} });
-    await admin.from('room_players').insert({ room_code: code, user_id: uid, name, seat: 0 });
+    if (error) {
+      if (error.code === '23505') continue;
+      throw error;
+    }
+    const { error: secretError } = await admin.from('room_secrets').insert({ room_code: code, data: {} });
+    if (secretError) throw secretError;
+    const { error: playerError } = await admin.from('room_players').insert({ room_code: code, user_id: uid, name, seat: 0 });
+    if (playerError) throw playerError;
     return { code };
   }
   throw new Error('Não foi possível criar a sala');

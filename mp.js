@@ -33,7 +33,22 @@ async function call(action, extra = {}) {
   }
   return res;
 }
-function showErr(e) { $('err').textContent = e?.message || String(e); }
+function showErr(e) {
+  const msg = e?.message || String(e);
+  $('err').textContent = msg;
+  let t = document.getElementById('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    t.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:#7a1f1f;color:#fff;padding:8px 14px;border-radius:8px;z-index:99;font:14px sans-serif;max-width:90vw';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.hidden = false;
+  clearTimeout(t._h);
+  t._h = setTimeout(() => { t.hidden = true; }, 5000);
+  console.error('[coup]', e);
+}
 
 async function init() {
   if (!cfg.url || cfg.url.includes('SEU-PROJETO')) {
@@ -61,10 +76,38 @@ async function enter(c) {
   subscribe();
 }
 
+let seq = 0, applied = 0, lastSig = '', refreshing = null, again = false;
+
 async function refresh() {
-  data = await call('get');
-  render();
+  // Junta várias chamadas simultâneas (evento de rooms + room_players) em uma só
+  if (refreshing) { again = true; return refreshing; }
+  refreshing = (async () => {
+    try {
+      do {
+        again = false;
+        const my = ++seq;
+        const res = await callRetry('get');
+        if (my < applied) continue; // resposta velha, descarta
+        applied = my;
+        data = res;
+        lastSig = sigOf(res.room.version, res.room.status, res.lobby.map(p => p.user_id));
+        render();
+      } while (again);
+    } finally { refreshing = null; }
+  })();
+  return refreshing;
 }
+
+async function callRetry(action, extra) {
+  let last;
+  for (let i = 0; i < 3; i++) {
+    try { return await call(action, extra); }
+    catch (e) { last = e; await new Promise(r => setTimeout(r, 400 * (i + 1))); }
+  }
+  throw last;
+}
+
+const sigOf = (v, st, ids) => `${v}|${st}|${[...ids].sort().join(',')}`;
 
 function subscribe() {
   if (chan) sb.removeChannel(chan);
@@ -72,8 +115,27 @@ function subscribe() {
   chan = sb.channel('room-' + code)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `code=eq.${code}` }, r)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'room_players', filter: `room_code=eq.${code}` }, r)
-    .subscribe();
+    .subscribe((status, err) => {
+      console.log('[coup] realtime:', status, err || '');
+      if (status === 'SUBSCRIBED') r(); // pega qualquer mudança ocorrida antes de conectar
+    });
 }
+
+// Rede de segurança: consulta barata (só versão/status/jogadores) a cada 2s.
+// Só chama a Edge Function quando algo mudou. Cobre falha do realtime e abas em segundo plano.
+async function poll() {
+  if (!code || !data || refreshing) return;
+  try {
+    const { data: row, error } = await sb.from('rooms')
+      .select('version,status,room_players(user_id)').eq('code', code).maybeSingle();
+    if (error || !row) return;
+    const sig = sigOf(row.version, row.status, row.room_players.map(p => p.user_id));
+    if (sig !== lastSig) await refresh();
+  } catch (e) { console.warn('[coup] poll', e); }
+}
+setInterval(poll, 2000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && code && data) refresh().catch(showErr); });
+window.addEventListener('focus', () => { if (code && data) refresh().catch(() => {}); });
 
 // Prazo: quando estoura, qualquer cliente pede ao servidor para aplicar a ação padrão
 setInterval(async () => {
