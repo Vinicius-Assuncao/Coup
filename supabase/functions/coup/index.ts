@@ -43,8 +43,9 @@ async function save(room: any, pub: any, sec: any) {
     .eq('code', room.code).eq('version', room.version).select('code');
   if (error) throw error;
   if (!data || data.length === 0) throw new Error('Estado mudou ao mesmo tempo. Tente de novo.');
+  // upsert: se a linha de segredos não existir (sala antiga), cria em vez de falhar em silêncio
   const { error: e2 } = await admin.from('room_secrets')
-    .update({ data: { ...sec, _v: room.version + 1 } }).eq('room_code', room.code);
+    .upsert({ room_code: room.code, data: { ...sec, _v: room.version + 1 } }, { onConflict: 'room_code' });
   if (e2) throw e2;
 }
 
@@ -140,6 +141,7 @@ Deno.serve(async (req: Request) => {
       default: return json({ error: 'Ação desconhecida' }, 400);
     }
   } catch (e) {
+    console.error('coup error:', (e as Error).stack || e);
     return json({ error: (e as Error).message }, 400);
   }
 });

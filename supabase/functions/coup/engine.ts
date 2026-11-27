@@ -392,7 +392,7 @@ export function publicView(g: any) {
     status: g.status, ex: g.ex, turn: g.turn, treasury: g.treasury, winner: g.winner,
     players: g.players.map((p: any) => ({
       ...p,
-      cards: g.sec.hands[p.id].map((c: any) => (c.dead ? { role: c.role, dead: true } : { role: null, dead: false })),
+      cards: (g.sec.hands[p.id] ?? []).map((c: any) => (c.dead ? { role: c.role, dead: true } : { role: null, dead: false })),
     })),
     pending: g.pending, steps: g.steps, log: g.log.slice(-80), deckCount: g.sec.deck.length,
   };
