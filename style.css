@@ -22,6 +22,12 @@ button:hover{transform:translateY(-2px);background:#fff3d6;box-shadow:0 5px 0 #b
 button:active{transform:translateY(2px);box-shadow:0 1px 0 #b89a5c}
 button.primary{background:linear-gradient(#f7d46e,#d99a1e);color:#3a2404;border-color:var(--gold-d);box-shadow:0 3px 0 var(--gold-d);font-weight:700}
 button.primary:hover{background:linear-gradient(#fbdd85,#e3a62e)}
+.button-link{display:inline-flex;align-items:center;justify-content:center;font-family:Lora,serif;font-size:14px;font-weight:400;line-height:1.2;text-decoration:none;background:var(--paper);border:2px solid #b89a5c;color:#4a3420;border-radius:999px;padding:9px 18px;margin:4px;cursor:pointer;box-shadow:0 3px 0 #b89a5c;transition:transform .15s,background .2s,box-shadow .15s}
+.button-link:hover{transform:translateY(-2px);background:#fff3d6;box-shadow:0 5px 0 #b89a5c}
+.button-link:active{transform:translateY(2px);box-shadow:0 1px 0 #b89a5c}
+.button-link:focus-visible{outline:3px solid rgba(47,127,179,.55);outline-offset:3px}
+.site-menu{position:fixed;z-index:1100;top:max(10px,env(safe-area-inset-top));left:max(10px,env(safe-area-inset-left));margin:0}
+.mp-link{text-align:center;margin:14px auto}
 .start{text-align:center}
 .players{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
 .pl{background:linear-gradient(#fffdf7,#f6ecd6);border:2px solid var(--line);border-radius:14px;padding:12px;transition:transform .35s,box-shadow .35s,opacity .35s,filter .35s}
@@ -99,7 +105,7 @@ button.primary:hover{background:linear-gradient(#fbdd85,#e3a62e)}
 .seat.me .cd{width:104px;height:150px}
 .seat.me .cd .art{height:72px}
 .seat.me .cd .txt{font-size:9px}
-.seat.active .cd{animation:none}
+.seat.active .cd:not(.new-reveal):not(.challenge-reveal){animation:none}
 @keyframes glow{0%,100%{box-shadow:0 4px 9px rgba(0,0,0,.22)}50%{box-shadow:0 0 0 3px #e0a420,0 4px 12px rgba(224,164,32,.6)}}
 .fly{position:absolute;width:58px;transform:translate(-50%,-50%)}
 .fly .cd{width:58px;height:86px}
@@ -249,9 +255,9 @@ button:disabled{opacity:.55;cursor:not-allowed;transform:none}
 }
 
 /* Cartas estáveis: sem pulos ao trocar de turno. Só desafios e trocas válidas animam. */
-.seat .hand .cd,
-.seat.active .hand .cd,
-.seat.active .cd{animation:none!important}
+.seat .hand .cd:not(.new-reveal):not(.challenge-reveal),
+.seat.active .hand .cd:not(.new-reveal):not(.challenge-reveal),
+.seat.active .cd:not(.new-reveal):not(.challenge-reveal){animation:none!important}
 .cd.challenge-reveal{animation:challengeTurn .78s cubic-bezier(.2,.8,.25,1) both;transform-style:preserve-3d;backface-visibility:hidden}
 .cd.dead.challenge-reveal{filter:none}
 @keyframes challengeTurn{0%{transform:rotateY(88deg) scale(.94)}55%{transform:rotateY(-9deg) scale(1.02)}100%{transform:rotateY(0) scale(1)}}
@@ -365,6 +371,7 @@ button:disabled{opacity:.55;cursor:not-allowed;transform:none}
   .fly .cd .art{height:30px}
 }
 @media(max-width:380px){
+  .site-menu{font-size:12px;padding:7px 11px}
   #table{min-height:575px;height:575px}
   .seat.sm .cd{width:33px;height:49px}
   .seat.sm .cd .art{height:27px}
@@ -382,7 +389,7 @@ button:disabled{opacity:.55;cursor:not-allowed;transform:none}
 
 /* ---- Ajustes de identidade das ações e hierarquia dos eventos ---- */
 /* O destaque do turno pulsa apenas a sombra; não move nem reintroduz as cartas. */
-.seat.active .hand .cd:not(.new-reveal){
+.seat.active .hand .cd:not(.new-reveal):not(.challenge-reveal){
   animation:none!important;
 }
 

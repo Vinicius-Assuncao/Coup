@@ -13,7 +13,7 @@ const ACT={
   golpe:{name:'Golpe de Estado (pagar 7)',cost:7,target:true,unstoppable:true},
   taxas:{name:'Duque: Taxas (+3)',cost:0,role:'duque'},
   assassinar:{name:'Assassino: Assassinar (pagar 3)',cost:3,role:'assassino',target:true,blockers:['condessa']},
-  extorquir:{name:'Capitão: Extorquir (2)',cost:0,role:'capitao',target:true,blockers:['capitao','embaixador']},
+  extorquir:{name:'Capitão: Extorquir (2)',cost:0,role:'capitao',target:true,blockers:['capitao','embaixador','inquisidor']},
   trocar:{name:'Trocar',cost:0,role:'EX'},
   investigar:{name:'Inquisidor: Investigar',cost:0,role:'inquisidor',target:true}
 };
